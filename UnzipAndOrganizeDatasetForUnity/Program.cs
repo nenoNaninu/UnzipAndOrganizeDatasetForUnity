@@ -17,7 +17,7 @@ namespace UnzipAndOrganizeDatasetForUnity
 
     public class MainBatch : BatchBase
     {
-        private bool CreateDirectory(string checkPath)
+        private static bool CreateDirectory(string checkPath)
         {
             if (!Directory.Exists(checkPath))
             {
@@ -28,21 +28,87 @@ namespace UnzipAndOrganizeDatasetForUnity
             return false;
         }
 
-        private void DeleteDirectory(string path)
+        private static void DeleteDirectory(string path)
         {
             if (Directory.Exists(path))
             {
-                Directory.Delete(path,true);
+                Directory.Delete(path, true);
+            }
+        }
+        
+        private static void DirectoryCopy(string sourceDirName, string destDirName, bool copySubDirs)
+        {
+            // Get the subdirectories for the specified directory.
+            DirectoryInfo dir = new DirectoryInfo(sourceDirName);
+
+            if (!dir.Exists)
+            {
+                throw new DirectoryNotFoundException(
+                    "Source directory does not exist or could not be found: "
+                    + sourceDirName);
+            }
+
+            DirectoryInfo[] dirs = dir.GetDirectories();
+            // If the destination directory doesn't exist, create it.
+            if (!Directory.Exists(destDirName))
+            {
+                Directory.CreateDirectory(destDirName);
+            }
+        
+            // Get the files in the directory and copy them to the new location.
+            FileInfo[] files = dir.GetFiles();
+            foreach (FileInfo file in files)
+            {
+                string temppath = Path.Combine(destDirName, file.Name);
+                file.CopyTo(temppath, false);
+            }
+
+            // If copying subdirectories, copy them and their contents to new location.
+            if (copySubDirs)
+            {
+                foreach (DirectoryInfo subdir in dirs)
+                {
+                    string temppath = Path.Combine(destDirName, subdir.Name);
+                    DirectoryCopy(subdir.FullName, temppath, copySubDirs);
+                }
             }
         }
 
-        private void ZipExtract(string[] zipFilePaths, string temporaryWorkSpacePath, string outputPath)
+        private static void CopyObjectDirectory(string[] objectFilePaths, string outputPath)
+        {
+            foreach (var objectFilePath in objectFilePaths)
+            {
+                var dirName = Path.GetFileName(Path.GetDirectoryName(objectFilePath)).SnakeToUpperCamel();
+                dirName = Regex.Replace(dirName, @"^[0-9]*", "");
+                var index = dirName.IndexOf("model", StringComparison.CurrentCultureIgnoreCase);
+
+                //Model 〜〜みたいな感じで始まるやつはModelを削除する。
+                if (index == 0)
+                {
+                    dirName = dirName.Substring(5);
+                }
+
+                var parentDirName = Regex.Replace(dirName, @"[0-9]", "");
+                parentDirName = Regex.Replace(parentDirName, "(.$)+", "");
+
+                CreateDirectory(Path.Join(outputPath, parentDirName));
+
+                var finalOutputPath = Path.Join(outputPath, parentDirName, dirName);
+
+                if (!Directory.Exists(finalOutputPath))
+                {
+                    DirectoryCopy(Path.GetDirectoryName(objectFilePath), finalOutputPath, true);
+                }
+            }
+        }
+
+        private static void ExtractZip(string[] zipFilePaths, string temporaryWorkSpacePath, string outputPath)
         {
             foreach (var zipFilePath in zipFilePaths)
             {
                 //解凍して
                 var outputZipPath = Path.Join(temporaryWorkSpacePath, Path.GetFileNameWithoutExtension(zipFilePath));
-                ZipFile.ExtractToDirectory(zipFilePath, outputZipPath,true);
+                ZipFile.ExtractToDirectory(zipFilePath, outputZipPath, true);
 
                 //obj or zip が入っているかを見る
                 var objFiles = Directory.GetFiles(outputZipPath, "*.obj", SearchOption.AllDirectories);
@@ -51,69 +117,16 @@ namespace UnzipAndOrganizeDatasetForUnity
                 //zipがあれば
                 if (zipFiles != null && zipFiles.Length >= 1)
                 {
-                    ZipExtract(zipFiles, temporaryWorkSpacePath, outputPath);
+                    ExtractZip(zipFiles, temporaryWorkSpacePath, outputPath);
                 }
 
                 //objがあればoutputPathに展開済みを吐き出す。
                 if (objFiles != null && objFiles.Length == 1)
                 {
-                    var dirName = Path.GetFileNameWithoutExtension(zipFilePath).SnakeToUpperCamel();
-//                    dirName = Regex.Replace(dirName, @"^[0-9]", "");
-                    var index = dirName.IndexOf("model", StringComparison.CurrentCultureIgnoreCase);
-
-                    //Model 〜〜みたいな感じで始まるやつはModelを削除する。
-                    if (index == 0)
-                    {
-                        dirName = dirName.Substring(5);
-                    }
-
-                    var parentDirName = Regex.Replace(dirName, @"[0-9]", "");
-                    CreateDirectory(Path.Join(outputPath, parentDirName));
-                    var outputPathFinally = Path.Join(outputPath, parentDirName, dirName);
-                    if (!Directory.Exists(outputPathFinally))
-                    {
-                        Directory.GetParent(objFiles[0]).MoveTo(outputPathFinally);
-                    }
-
+                    CopyObjectDirectory(objFiles, outputPath);
                     Console.WriteLine($"{outputZipPath} done");
                 }
             }
-
-//            Parallel.ForEach(zipFilePaths, zipFilePath =>
-//            {
-//                //解凍して
-//                var outputZipPath = temporaryWorkSpacePath + Path.GetFileName(zipFilePath);
-//                ZipFile.ExtractToDirectory(zipFilePath, outputZipPath);
-//
-//                //objが入っているか見る。
-//                var objFiles = Directory.GetFiles(zipFilePath, "*.obj");
-//
-//                //ディレクトリの中にzipファイルがある場合、解凍して中身を確かめないといけない。
-//                var zipFiles = Directory.GetFiles(zipFilePath, "*.zip");
-//                if (zipFiles != null && zipFiles.Length >= 1)
-//                {
-//                    ZipExtract(zipFiles, temporaryWorkSpacePath, outputPath);
-//                }
-//
-//                //存在していればoutputPathに吐き出す。
-//                if (objFiles != null && objFiles.Length >= 1)
-//                {
-//                    var dirName = Path.GetFileName(zipFilePath).SnakeToUpperCamel();
-//                    var index = dirName.IndexOf("Model", StringComparison.CurrentCultureIgnoreCase);
-//
-//                    //Model 〜〜みたいな感じで始まるやつはModelを削除する。
-//                    if (index == 0)
-//                    {
-//                        dirName = dirName.Substring(5);
-//                    }
-//
-//                    var parentDirName = Regex.Replace(dirName, @"[0-9]", "");
-//                    CreateDirectory(Path.Join(outputPath, parentDirName));
-//
-//                    Directory.Move(outputZipPath, Path.Join(outputPath, parentDirName, dirName));
-//                    Console.WriteLine($"{outputZipPath} done");
-//                }
-//            });
         }
 
         /// <summary>
@@ -148,8 +161,10 @@ namespace UnzipAndOrganizeDatasetForUnity
 
                 //zipファイル全部集めてくる。
                 string[] zipFilePaths = Directory.GetFiles(targetPath, "*.zip", SearchOption.AllDirectories);
+                string[] objFilePaths = Directory.GetFiles(targetPath, "*.obj", SearchOption.AllDirectories);
 
-                ZipExtract(zipFilePaths, temporaryWorkSpacePath, outputPath);
+                CopyObjectDirectory(objFilePaths, outputPath);
+                ExtractZip(zipFilePaths, temporaryWorkSpacePath, outputPath);
             }
             catch (Exception e)
             {
