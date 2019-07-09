@@ -121,7 +121,7 @@ namespace UnzipAndOrganizeDatasetForUnity
                 }
 
                 //objがあればoutputPathに展開済みを吐き出す。
-                if (objFiles != null && objFiles.Length == 1)
+                if (objFiles != null && objFiles.Length >= 1)
                 {
                     CopyObjectDirectory(objFiles, outputPath);
                     Console.WriteLine($"{outputZipPath} done");
